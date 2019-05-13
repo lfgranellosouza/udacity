@@ -1,0 +1,677 @@
+
+# **Heróis da Marvel x Heróis da DC**
+### por *Luís Felipe Granello de Souza*
+
+> Neste trabalho, analisaremos o panteão de heróis das editoras mais famosas no mundo - *Marvel Comics* e *DC*, reconhecidas pelos sucessos em suas HQs (histórias em quadrinhos). Analisaremos características físicas e categóricas dos heróis, bem como o mais poderoso, o mais popular, a distribuição dentre gêneros e aparições, os poderes típicos por raça e qual lado se sairia melhor num confronto final.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+# Carregue aqui todos os pacotes utilizados 
+# na sua análise realizada neste arquivo fonte.
+
+# Note que o parâmetro "echo" foi definido como FALSE neste código.
+# Isso previne que o código apresente resultados formatados em HTML.
+# Você deve definir echo=FALSE para todos os blocos de código no seu arquivo.
+
+# Limpeza das variáveis e do console
+rm(list= ls())
+cat('\014')
+
+library(readr)
+library(knitr)
+library(tidyr)
+library(dplyr, warn.conflicts= FALSE)
+library(sqldf)
+library(ggplot2)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Load_the_Data}
+# Carregamento dos dados
+
+heroes <- read_csv('heroes_information.csv',
+                   col_types = cols())
+powers <- read_csv('super_hero_powers.csv',
+                  col_types = cols())
+power_strengths <- read_delim('power_strength.csv',
+                            delim= ";",
+                            col_types = cols())
+marvel_wikia <- read_csv('marvel-wikia-data.csv',
+                         col_types = cols())
+dc_wikia <- read_csv('dc-wikia-data.csv',
+                     col_types = cols())
+```
+
+# Seção de Gráficos Univariados
+
+### *1. Fontes de dados*
+> #### Utilizaremos diversas fontes de dados csv, os arquivos `powers`, `heroes` e `power_strengths`e os arquivos `wiki`, obtidos por buscas na Web.
+> #### `heroes` contém 734 observações (cada uma, um heroi) e 11 atributos
+> #### `powers` contém 667 observações (cada uma, um heroi) e 168 atributos
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Univariate_Plots}
+dim(heroes)
+dim(powers)
+glimpse(heroes)
+summary(heroes)
+#glimpse(powers)
+#summary(powers)
+```
+### *2. Data Cleansing*
+
+> #### Como, em `heroes`, há valores *-99* em *Weight (peso)* e *Height (altura)* , que são fisicamente impossíveis, convertemo-los para *NAs*.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Data_Cleansing}
+ConvertMissing1 <- c('Gender', 'Eye color', 'Race', 'Hair color', 'Skin color', 'Alignment')
+# Colunas com valores missing em "-99"
+ConvertMissing2 <- c('Weight', 'Height')
+# Colunas com valores categóricos
+ConvertFactor <- c('Gender', 'Alignment')
+
+for (nr_col in match(ConvertMissing2, names(heroes)) ) {
+   heroes[which(heroes[[nr_col]] == "-99"), nr_col] <- NA
+}
+```
+
+> #### E fizemos o mesmo com as células preenchidas por *"-"*.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Data_Cleansing2}
+for (nr_col in match(ConvertMissing1, names(heroes)) ) {
+   heroes[which(heroes[[nr_col]] == "-"), nr_col] <- NA
+}
+```
+
+> #### Da mesma forma, é interessante excluirmos colunas desnecessárias e convertemos valores categóricos de algumas colunas em fatores.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Data_Cleansing3}
+for (nr_col in match(ConvertFactor, names(heroes)) ) {
+    heroes[[nr_col]] <- as.factor(heroes[[nr_col]])
+}
+
+heroes <- heroes[,-1]
+```
+
+> #### Em `powers`, convertamos as strings 'TRUE' e 'FALSE' para valores lógicos
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Variable_Transf}
+powers[,-1] <- lapply(powers[,-1], as.logical)
+power_strengths[,1] <- lapply(power_strengths[,1], as.factor)
+```
+
+### *3. Exploração de dados*
+
+> #### Comecemos por agrupar os dados para vermos as editoras preponderantes:
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Data_Manip}
+herois_por_editora <- sqldf("SELECT Publisher, count(name) as freq,
+                            cast(count(name) as Real) / cast((SELECT count(*) FROM heroes) as Real) as Percent
+                            FROM heroes
+                            GROUP BY Publisher
+                            ORDER BY count(Publisher) DESC")
+
+herois_por_editora <- herois_por_editora %>% mutate(Publisher = replace(Publisher, Percent <= 0.024, "Outras"))
+
+herois_por_edit_res = sqldf("SELECT Publisher, sum(freq) as Qtd_Pers,
+                             sum(Percent) as Percent
+                             FROM herois_por_editora
+                             GROUP BY Publisher
+                             Order by sum(freq) DESC")
+
+kable(head(herois_por_edit_res, 10), caption= "Herois por Editora (Primeiras 10 linhas)")
+```
+
+
+
+### *3.1. "*Character-share*" das Editoras*
+> Vejamos como é a distribuição criativa de personagens por editora
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Histogram}
+# Plota-se um gráfico de barras
+ggplot(herois_por_edit_res, aes(x= "", y= Qtd_Pers, fill= reorder(Publisher, -Percent))) + geom_bar(stat= "identity", width= 1) +
+# para então convertê-lo em coordenadas polares
+coord_polar("y", start= 0, direction= -1) +
+geom_text(aes(label = paste0(round(100*Percent), "%")), position = position_stack(vjust = 0.5)) +
+labs(x = NULL, y = NULL, fill = NULL, title = "Distribuição de Personagens criados por Editora") +
+theme_classic() + 
+theme(axis.line = element_blank(),
+      axis.text = element_blank(),
+      axis.ticks = element_blank(),
+      plot.title = element_text(hjust = 0.5, color = "black")) # +
+#scale_fill_manual(values = c("#AA0505", "#282e3c" , 'green', 'black', 'purple'))
+```
+
+> A partir do nem sempre recomendável gráfico de pizza acima, vemos a distribuição de personagens por editora.
+> *Marvel Comics* e *DC* dominam no polo criativo, tendo direitos autorais sobre 82% dos personagens do *dataset*
+> Comparemos as duas editoras então.
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE, Filter_Marvel_DC}
+marvel_dc <- heroes %>% filter(Publisher %in% c("Marvel Comics","DC Comics"))
+
+categoricos <- c('name', 'Gender', 'Eye color', 'Race', 'Hair color', 'Publisher', 'Skin color', 'Alignment')
+
+for(i in match(categoricos, names(marvel_dc))) {
+    marvel_dc[,i] <- lapply(marvel_dc[,i], as.factor)
+    }
+```
+
+### *3.2. Qual o ranking de herois por poder total?*
+> Para saber quais os herois mais poderosos, ponderamos o *binário* (possui / não possui) de cada habilidade específica do heroi pelo valor de escala que pode ser encontrado na [*Database de Super Herois*](https://www.superherodb.com/powers/)
+
+```{r echo=FALSE, Hero_Rank}
+heroes$name <- as.character(heroes$name)
+powers$hero_names <- as.character(powers$hero_names)
+
+lista_poderes <- heroes %>%
+                 select(name, Publisher) %>%
+                 inner_join(powers, by = c('name' = 'hero_names')) %>%
+                 gather(power, power_count, -name, -Publisher)
+
+categoricos <- c('name', 'Publisher', 'power')
+
+for(i in match(categoricos, names(lista_poderes))) {
+    lista_poderes[,i] <- lapply(lista_poderes[,i], as.factor)
+}
+
+# Converte valores lógicos em caracteres para busca no SQL
+lista_poderes[,4] <- lapply(lista_poderes[,4], as.character)
+
+top_n_herois <- function(n) {
+  
+  LPT <- sqldf("SELECT *
+                FROM lista_poderes as LP
+                WHERE LP.power_count in ('TRUE')")
+  
+  rnk_hero <- sqldf("SELECT LPT.name,
+                            sum(PS.Score) as Poder_Total
+                    FROM LPT INNER JOIN power_strengths as PS  on LPT.power = PS.Skill
+                    GROUP BY LPT.name")
+  
+  rnk_hero_publs <- sqldf("SELECT MDC.Publisher, MDC.name, rnk_hero.Poder_Total
+                           FROM marvel_dc as MDC INNER JOIN rnk_hero on MDC.name = rnk_hero.name
+                          ORDER BY rnk_hero.Poder_Total DESC")
+  
+    ranking_herois <- rnk_hero_publs %>% head(n)
+    return(ranking_herois)
+}
+
+top20 <- top_n_herois(20)
+top20 %>% head(20) %>% kable(caption= "Ranking dos 20 Heróis mais poderosos")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rank_Chart}
+top20 %>%
+ggplot(aes(y= Poder_Total, x= reorder(name, Poder_Total), fill= Publisher)) +
+geom_bar(stat= 'identity') +
+labs(title = "Ranking de Herois por Poder", x= 'Nome',y= 'Poder Total') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"), 
+      legend.position= "bottom", 
+      legend.title= element_blank()) +
+scale_fill_manual(values = c("#282e3c", "#AA0505")) +
+coord_flip()
+```
+
+> O desconhecido *"The One-Above-All"* aparenta ser o herói mais poderoso de todos, corroborando com seu nome.
+> *Captain Marvel* tem sua barra representativa bicolorida - tratam-se de dois personagens homônimos dentre os universos. Devido aos direitos autorais, o personagem da *DC* foi reintroduzido como *Shazam!* em 1972. 
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Power_Histogram}
+top_n_herois(nrow(heroes)) %>%
+ggplot(aes(x= Poder_Total, fill= Publisher)) +
+geom_histogram(binwidth= 10) +
+facet_grid(Publisher ~ .) +
+labs(title = "Histograma de Poderes dos Herois", x= 'Poder Total',y= 'Quantidade de Heróis') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      legend.position= "bottom")+
+scale_fill_manual(values = c("#282e3c", "#AA0505"))
+```
+
+> Pelo distribuição de frequência e níveis de poder, vemos que a *Marvel* leva ampla vantagem, possuindo os herois mais poderosos e, eventualmente, saindo-se melhor em um hipotético conflito de *crossover*
+
+### *3.3. Quais os heróis mais versáteis?*
+> Podemos medir a versatilidade de acordo com a diversidade de poderes que um herói tem
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Versatility}
+# Recriemos a tabela da lista de poderes ativos
+LPT <- sqldf("SELECT *
+              FROM lista_poderes as LP
+              WHERE LP.power_count in ('TRUE')")
+
+qtd_poderes <- sqldf("SELECT LPT.Publisher, LPT.name,
+                      count(LPT.power) as Qtd_Poderes
+                      FROM LPT
+                      WHERE LPT.Publisher in ('Marvel Comics', 'DC Comics')
+                      GROUP BY LPT.Publisher, LPT.name
+                      ORDER BY count(LPT.power) DESC
+                     ")
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Rank_Chart_Power_Amount}
+head(qtd_poderes,20) %>%
+ggplot(aes(y= Qtd_Poderes, x= reorder(name, Qtd_Poderes), fill= Publisher)) +
+geom_bar(stat= 'identity') +
+labs(title = "Ranking de Herois por Nº de Habilidades", x= 'Nome',y= 'Nº de Habilidades') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"), 
+      legend.position= "bottom", 
+      legend.title= element_blank()) +
+scale_fill_manual(values = c("#282e3c", "#AA0505")) +
+coord_flip()
+```
+
+> Os poderes aracnídeos do *Spidey* (*Homem-Aranha*), aliados ao seu gênio intelectual, fazem dele o herói mais versátil dentre todos.
+
+
+### *3.4. Popularidade*
+> Observemos agora a popularidade de um heroi, podendo ser entendida como número de vezes que ele aparece nas HQs, impulsionando o volume de vendas.
+> Vejamos também a densidade de aparições por ano, para tentarmos ser justos com herois de criação recente e que também são populares
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Appearance}
+publisher <- rep("Marvel Comics", dim(marvel_wikia)[1])
+marvel_wikia <- cbind(marvel_wikia, publisher)
+publisher <- rep("DC Comics", dim(dc_wikia)[1])
+dc_wikia <- cbind(dc_wikia, publisher)
+
+names(dc_wikia) <- names(marvel_wikia)
+wiki <- rbind(marvel_wikia, dc_wikia)
+
+caract_interesse <- c("name", "ALIGN", "SEX", "APPEARANCES", "Year", "publisher")
+wiki <- wiki[caract_interesse]
+
+dens_aparicao <- round(wiki$APPEARANCES / (2019 - wiki$Year),3)
+wiki <- head(cbind(wiki, dens_aparicao),20)
+
+
+wiki %>%
+ggplot() +
+geom_bar(data= wiki, aes(y= APPEARANCES, x= reorder(name, -APPEARANCES), fill= publisher), position= 'stack', stat= 'identity') +
+labs(title = "Top 20 Herois com maior Nº de Aparições", x= 'Nome', y= 'Nº de Aparições') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle = 90, hjust = 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+scale_fill_manual(values = c("#AA0505", "#282e3c"))
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Appearance_Density}
+wiki %>%
+ggplot() +
+geom_bar(data= wiki, aes(y= dens_aparicao, x= reorder(name, -dens_aparicao), fill= publisher), position= 'stack', stat= 'identity') +
+labs(title = "Top 20 Herois com maior Nº de Aparições/Ano", x= 'Nome',y= 'Densidade de Aparições') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle = 90, hjust = 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+scale_fill_manual(values = c("#AA0505", "#282e3c"))
+```
+
+> A popularidade do *Spidey* é mantida tanto em termos absolutos quanto relativos. Vê-se também que a popularidade de *Wolverine*, *Homem de Ferro* e *Capitão América* também são consistentes.
+
+
+### *3.5. E quando os autores estavam sem ideias?*
+> Quando os autores não tinham ideias de poderes novos, a quais habilidades eles mais recorriam? Em outras palavras: quais poderes são os mais comuns dentre os heróis?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Most_common_Powers}
+poderes_comuns <- sqldf("SELECT LPT.Publisher, LPT.power,
+                      count(LPT.name) as Qtd_Pers
+                      FROM LPT
+                      WHERE LPT.Publisher in ('Marvel Comics', 'DC Comics')
+                      GROUP BY LPT.power, LPT.Publisher
+                      ORDER BY count(LPT.name) DESC")
+
+head(poderes_comuns,20) %>%
+ggplot(aes(y= Qtd_Pers, x= reorder(power, Qtd_Pers), fill= Publisher)) +
+geom_bar(stat= 'identity') +
+labs(title = "Frequência das 20 habilidades mais comuns", x= 'Habilidade',y= 'Frequência nos Herois') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle = 90, hjust = 1),
+      legend.position= "bottom",
+      legend.title= element_blank())+
+scale_fill_manual(values = c("#282e3c", "#AA0505"))+
+coord_flip()
+```
+
+> Intuitivamente, super-força, estamina, durabilidade, super-velocidade, agilidade e voo se provaram como os poderes mais comuns presentes no universo dos quadrinhos.
+> Dado o maior número de heróis na *Marvel*, é de se esperar que o volume das habilidades mais comuns sejam maior nesta editora que na *DC*.
+
+### *3.6. Distribuição de Gênero*
+> Uma curiosidade que pode rodear o mundo dos quadrinhos é como se dá a repartição de papéis entre protagonistas masculinos e femininos. Vejamos
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Gender_Distrib}
+heroes2 <- heroes
+heroes2$Publisher[is.na(heroes$Publisher)] <- 'Outros'
+heroes2$Publisher[!(heroes$Publisher %in% c('Marvel Comics','DC Comics'))] <- 'Outros'
+
+ggplot(data= subset(heroes2, heroes2$Gender %in% c('Male', 'Female')), aes(x= Publisher, fill= Gender)) +
+geom_bar(position= "fill") +
+labs(title = "Distribuição de Gênero dentre os Personagens", x= 'Editora',y= 'Frequência Gênero nos Herois') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank())+
+scale_fill_manual(values = c("#FE7F9C", "#6593F5"))
+```
+
+> Vemos que os personagens masculinos representam mais de 70% em todas as editoras - há quase 3 vezes mais super-heróis masculinos que femininos.
+> As personagens femininas, por sua vez, tem mais espaço na *Marvel*.
+
+### *3.7. Distribuição de Bem x Mal*
+> E como vai o maniqueísmo nos quadrinhos? Será que a quantidade de mocinhos é muito superior a de vilões? Vejamos
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE, Alignment}
+heroes2$Alignment <- factor(heroes2$Alignment, levels = c('bad','neutral','good'))
+
+ggplot(data=subset(heroes2, !is.na(Alignment)), aes(x = Publisher, fill = Alignment)) +
+geom_bar(position = "fill") +
+labs(title = "Bem x Mal", x= 'Editora',y= 'Frequência de Lado nos Herois') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+scale_fill_manual(values = c("black", "grey", "skyblue"))
+```
+
+> Pode-se notar que a *DC* possui, comparativamente, a maior parte de personagens neutros. Isto possibilita manobras criativas e *plot twists* interessantes nos roteiros.
+> A *Marvel*, por outro lado, é quem possui mais vilões em relação ao todo.
+
+### *3.8. Distribuição de Raças*
+> Quadrinhos, por diversas vezes, apresentam viagens planetárias, espaço-temporais e outras sandices que a ficção permite. Será que a raça humana é uma minoria nestas histórias de fantasias?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Race_Distrib}
+races <- sqldf("SELECT Publisher, Race, count(name) as Qtd_Raca
+               FROM heroes2
+               WHERE Race is not null
+                and Race <> '-'
+                and Publisher is not null
+               GROUP BY Publisher, Race
+               HAVING count(name) >= 5
+               ORDER BY count(name) DESC")
+
+races %>%
+ggplot(aes(x = reorder(Race, Qtd_Raca) , y = Qtd_Raca, fill = Publisher)) +
+geom_bar(stat = "identity", position = "dodge") +
+labs(title = "Raças Comuns de Super-Heróis", x = "Raças", y = "Nº de Super-Heróis") +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+scale_fill_manual(values = c("#282e3c", "#AA0505", "darkgreen")) +
+theme(legend.position = "bottom", legend.title=element_blank()) +
+coord_flip()
+```
+
+> A *Marvel* tem um pico em super-heróis mutantes, o que é, certamente, um reflexo dos *X-Men*.
+> *DC* na quantidade de personagens humanos e apresenta "Deuses / Eternos" como uma marca registrada.
+> Vemos que Asgardianos só existem no Universo *Marvel* enquanto que Kryptonianos são exclusividades da *DC*.
+
+# Análise Univariada
+
+#### Qual é a estrutura do conjunto de dados?
+> Os dados são compostos por diversas fontes csv. As principais foram descritas e analisadas na trajetória acima. 
+> Basicamente, podemos dizer que há 734 heróis no *dataset* `heroes`, sendo catalogados atributos como nome, gênero, cor dos olhos, do cabelo e de pele, raça, altura (cm), peso (kg), lado (bem / mal / neutro) e editora. No *dataset* `powers` há 667 herois e 168 atributos em variáveis dummy: elas são verdadeiras se o personagem tem aquele poder ou falsa, caso contrário. O *dataset* `power_strengths` pontua com valores cada habilidade e há também outros arquivos com informações complementares (ano de criação, número de aparições) oportunas para alguns *joins*.
+
+``` {r echo=FALSE, message=FALSE, warning=FALSE, Data_Structure}
+glimpse(heroes)
+summary(heroes)
+
+# Os descritivos de `powers` foram comentados devido ao extenso número de suas variáveis categóricas
+# glimpse(powers)
+# summary(powers)
+```
+
+#### Quais são os principais atributos de interesse deste conjunto de dados?
+> Os atributos que despertam mais interesse são poder total, raça, gênero, número de aparições de um dado personagem
+
+#### Quais outros atributos você acha que podem lhe auxiliar na investigação destes atributos de interesse?
+> Atributos categóricos trazem muitas possibilidades, mas, sem dúvida, o *score* de uma habilidade específica e o fato de um personagem possuí-la ou não está diretamente relacionado com seu nível de poder.
+
+#### Você criou novas variáveis a partir dos atributos existentes no conjunto de dados?
+> Sim. Diversas variáveis são criadas ao longo na análise exploratória no sentido de possibilitar alguns plots - sua criação é explicada em curso. Podemos retomar a criação da variável densidade de aparições (número de aparições de um personagem / anos de existência) e da variável poder total, que foi o produto interno entre o vetor de habilidades específicas (0/1 ou False/True para uma lista de habilidades que um heroi possui) e o vetor de valor dessas habilidades, de modo a compor o ranking de personagens mais poderosos.
+
+#### Dos atributos investigados, distribuições incomuns foram encontradas? Você aplicou operações nos dados para limpá-los, ajustá-los ou mudar a forma dos dados? Se sim, por quê?
+> Conforme explicado nas primeiras manobras de análise exploratória, foram introduzidos valores *NA* para dados vistos por inspeção como discrepantes (valores negativos para pesos e alturas) ou assinalados por hífens sem valor. Dados numéricos também podem passar por transformações não-lineares como a aplicação do logaritmo natural para serem condensados no espaço de exibição
+
+# Seção de Gráficos Bivariados
+
+### *4.1. Peso e altura dos personagens por gênero*
+> Haveria alguma distinção entre peso e altura dos personagens masculinos e femininos?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Height_Weight_Gender}
+qplot(x = Weight, y= Height/100, data = heroes[!is.na(heroes$Gender),]) +
+facet_wrap(~Gender) +
+labs(title = "Peso e altura por Gênero", x = "Peso (kg)", y = "Altura (m)") +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+scale_y_continuous(breaks= seq(0, 10, by= 1)) +
+theme(legend.position = "bottom", legend.title=element_blank())  
+```
+
+> Sim! as heroínas feminas aparentam ser muito mais leves e menores, ainda que existam alguns *outliers*.
+> Há também personagens masculinos beirando os 10m, mas a normalidade concentra-se entre 1.5m a 2.0m, reflexo da alta composição humana no rol de personagens
+
+### *4.2. Peso e altura dos personagens por editora*
+> E haveria alguma variação nessas medidas por editora?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Height_Weight_Publisher}
+qplot(x = Weight, y= Height, data = heroes2) +
+facet_wrap(~Publisher) +
+geom_smooth(method = 'lm', color = 'red', se= FALSE) 
+```
+
+> Desta vez, a resposta é não. *Marvel* e *DC* são bem próximas nesse aspecto - as regressões lineares, ainda que sejam um modelo de baixo poder explanatório com R² baixo, demonstram a similaridade entre as editoras
+
+### *4.3. Índice de Massa Corpórea (IMC) dos Personagens*
+> Podemos avaliar altura e peso simultaneamente dos personagens pelo índice de massa corpórea (IMC), que é a razão entre massa e o quadrado da altura. Em tese, este índice é capaz de categorizar a normalidade da gordura corporal ou o sobrepeso.
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, IMC_Gender}
+qplot(y= Weight/(Height/100)^2, x= Publisher,
+      data= na.omit(heroes2[heroes2$Publisher !='Outros',]), geom= 'boxplot',
+      fill = Gender) + 
+theme_bw() + 
+labs(title = "IMC por Gênero", x = "Editora", y = "IMC (kg/m²)") +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+theme(legend.position = "bottom", legend.title=element_blank()) +
+scale_fill_manual(values = c("#FE7F9C", "#6593F5"))
+```
+
+> Se lançarmos mão do limite superior saudável, que é 25, vemos que a maioria dos personagens encontram-se em risco de sobrepeso. Contudo, este valor é aplicável à raça humana, não podendo ser um parâmetro muito rígido de análise
+
+> Se segmentarmos por raça...
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, IMC_Race}
+imc_race <- sqldf("SELECT *
+                  FROM races as R LEFT JOIN heroes2 as H on R.Race = H.Race
+                                            and R.Publisher = H.Publisher")
+
+qplot(y= Weight/(Height/100)^2, x= Publisher,
+      data= na.omit(imc_race), geom = 'boxplot',
+      fill = Race) +
+theme_bw() +
+labs(title = "IMC por Raça", x = "Editora", y = "IMC (kg/m²)") +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+theme(legend.position = "bottom", legend.title=element_blank())
+```
+
+> Visualizamos então que a categoria responsável por elevar os valores para cima são os *Humanos com Radiação*, que apresentam uma espécie de efeito densificador sobre o corpo.
+> As demais categorias - até mesmo aliens - parecem respeitar o limite saudável do IMC.
+
+# Análise Bivariada
+
+#### Discuta sobre alguns dos relacionamentos observados nesta parte da investigação. Como os atributos de interesse variaram no conjunto de dados?
+> Como grande parte das variáveis são categóricas, gráficos de dispersão de valor foram minoria. Variações de peso, altura e IMC puderam ser vistos categoricamente nos *boxplots* e nos *scatterplots*.
+
+#### Você observou algum relacionamento interessante entre os outros atributos (os que não são de interesse)?
+> Há uma grande variabilidade entre peso, altura e IMC com variáveis categóricas como gênero - que inicialmente, não foram mapeadas como de interesse, a despeito da raça, por exemplo.
+
+#### Qual foi o relacionamento mais forte encontrado?
+> Foi visualizado um elevado IMC médio (que carrega consigo grande massas e alturas menores) fortemente correlacionado com a categoria de *humanos irradiados* - o efeito de densificação corpórea, supracitado. Valores menores de IMC foram observados em outras categorias de personagens
+
+# Seção de Gráficos Multivariados
+
+### *5.1.Poder Total por Lado e Editora*
+> #### Em um conflito final, - como a *Marvel* testou em seu roteiro de *Guerra Infinita* - se todos os personagens fossem reunidos, na ausência de uma estratégia, quem levaria a melhor?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Power_Alignment}
+vlr_poderes <- top_n_herois(nrow(heroes))
+
+poder_lado <- sqldf("SELECT H.*, P.Poder_Total
+                    FROM vlr_poderes P LEFT JOIN heroes H on P.name = H.name
+                                              and P.Publisher = H.Publisher
+                    WHERE H.Alignment is not null")
+
+qplot(data= poder_lado, x= log(Poder_Total), fill= Alignment) +
+facet_wrap(~Publisher, ncol = 4) +
+scale_fill_brewer(type = 'qual') +
+labs(title = "Balanço de Poderes no Conflito Final", x = "ln(Poder Total)", y = "Frequência") +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+theme(legend.position = "bottom", legend.title=element_blank())
+```
+
+> Vemos pelo histograma empilhado que, para diversas faixas de poder, o bem é superior, possivelmente saindo vitorioso de um conflito generalizado.
+> Ajustamos os valores de poder total pelo logaritmo natural apenas para um conforto visual - menores níveis de poder são mais frequentes na realidade
+> É interessante destacar que, na *Marvel*, os personagens de maior poder apresentam alinhamento neutro, estando, literalmente, acima do bem e do mal.
+
+### *5.2. Poder total por Gênero e Editora*
+> #### Se tivermos a mesma curiosidade, observando agora os gêneros...
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Power_Alignment_Gender}
+qplot(data= poder_lado, x= log(Poder_Total), fill= Gender) +
+facet_wrap(~Publisher, ncol = 4) +
+scale_fill_brewer(type = 'qual') +
+labs(title = "Balanço de Poderes na Guerra dos Sexos", x = "ln(Poder Total)", y = "Frequência") +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+theme(legend.position = "bottom", legend.title=element_blank())
+```
+
+> ... veremos que as proporções de personagens masculinos são preponderantemente mais poderosas nesse contexto.
+> Além disso, é notável, especialmente na *Marvel*, personagens sem gênero declarado - *The One-Above-All*, o mais poderoso, é um deles
+
+### *5.3. Mapa de Calor de Poderes por Raça*
+> #### Conhecendo-se uma raça, é possível prever quais poderes o personagem terá?
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, Power_Race}
+poder_raca <- sqldf("SELECT H.Race, LPT.power,
+                    count(power_count) as QtdePoderRaca
+                    FROM LPT left join heroes H on LPT.name = H.name
+                                    and LPT.Publisher = H.Publisher
+                    WHERE H.Race is not null
+                    GROUP BY H.Race, LPT.power
+                    HAVING count(power_count) >= 10
+                    ORDER BY count(power_count) DESC")
+
+poder_raca %>%
+ggplot(aes(x= reorder(Race, QtdePoderRaca), y= reorder(power, -QtdePoderRaca))) + 
+geom_tile(aes(fill = QtdePoderRaca), colour = "white") + 
+scale_fill_gradient(low = "lightyellow", high = "red") +
+labs(title = "Mapa de Calor de Habilidades por Raça", x = "Habilidades", y = "Raças") +
+theme_bw() +
+theme(legend.position= "bottom",
+      legend.title= element_blank(), 
+      plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle = 90, hjust = 1),
+      axis.text.y = element_text(angle = 0, hjust = 1, vjust = 1),
+      aspect.ratio = .08) +
+coord_flip()
+```
+
+> Para nossa supresa, vimos que a raça mais habilidosa nas HQs é a humana mesmo, seguida dos mutantes e dos deuses/eternos.
+
+# Análise Multivariada
+
+#### Discuta sobre os relacionamentos observados nesta parte da investigação. Quais atributos que fortaleceram os demais na observação das variáveis de interesse?
+> Reforçou-se, dentre as variáveis categóricas, que personagens do gênero masculino apresentam maior poder absoluto, o que também está correlacionado ao fato de existir mais personagens masculinos nos universos das editoras como um todo. O fato de o grupo de personagens benévolos sobrepor-se, em poder total, ao de malévolos corrobora com o aspecto de "bem moralizante" pregado pelas HQs, que ambém fomenta a esperança em nós de um bem definitivo no futuro.
+
+#### Interações surpreendentes e/ou interessantes foram encontradas entre os atributos?
+> Crê-se que a interação mais surpreendente foi a que descobriu que, nas relações de frequência entre raças e poderes, a raça mais poderosa das HQs é a humana. Foi interessante também ver que os personagens mais poderosos no universo *Marvel* em especial, não tem um lado definido num hipotético confronto final.
+
+#### OPCIONAL: Modelos foram criados usando este conjunto de dados? Discuta sobre os pontos fortes e as limitações do seu modelo.
+> Foram realizadas regressões lineares nos *scatterplots* de altura por peso, segmentados por editora, em explorações anteriores. Porém, por apresentarem baixo poder explicativo, tais regressões foram discutidas modestamente. A própria visualização do Mapa de Calor da seção 5.3. lança mão de um simples método de clusterização - ordenamento bidimensional - para ilustrar relações crescentes de importância do canto inferior direito ao canto superior esquerdo no gráfico.
+
+------
+
+# Gráficos Finais e Sumário
+
+#### Primeiro Gráfico
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_One}
+top20 %>%
+ggplot(aes(y= Poder_Total, x= reorder(name, Poder_Total), fill= Publisher)) +
+geom_bar(stat= 'identity') +
+labs(title = "Ranking de Herois por Poder", x= 'Nome',y= 'Poder Total') +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"), 
+      legend.position= "bottom", 
+      legend.title= element_blank()) +
+scale_fill_manual(values = c("#282e3c", "#AA0505")) +
+coord_flip()
+```
+
+#### Descrição do Primeiro Gráfico
+> *Ranking* de poder dos herois. As habilidades específicas de cada um foram ponderadas pelos seus respectivos valores conforme disponível na [SHDb](https://www.superherodb.com/powers/). O pouco conhecido "The-One-Above-All" é o personagem mais poderoso da *Marvel*, rivalizando com "Spectre", da *DC*. Neste top 20, vê-se que a *Marvel* é muito presente.
+
+#### Segundo Gráfico
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Two}
+qplot(data= poder_lado, x= log(Poder_Total), fill= Alignment) +
+facet_wrap(~Publisher, ncol = 4) +
+scale_fill_brewer(type = 'qual') +
+labs(title = "Balanço de Poderes no Conflito Final", x = "ln(Poder Total)", y = "Frequência") +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+theme(legend.position = "bottom", legend.title=element_blank())
+```
+
+#### Descrição do Segundo Gráfico
+> Balanço de poderes no conflito final. A batalha final movimenta muito a imaginação dos leitores de HQs, especialmente em um arco capaz de envolver todos os personagens. É interessante observar que os valores de poder total são apresentados transformados pelo logaritmo natural e temos a representação de uma distribuição semelhante à gaussiana. Da estatística, sabe-se que, se o logaritmo natural de um variável aleatória X qualquer leva a uma distribuiçao normal, o X original possivelmente segue uma distribuição exponencial, o que faz total sentido, até em termos de roteiro: há muitos personagens com pouco poder e poucos personagens com muito poder - o estabelecimento do conceito de raridade. O bem, mais poderoso, tem mais chances de vitória. Destaque novamente para a *Marvel*, com personagens poderosos estando acima do bem e do mal.
+
+#### Terceiro Gráfico
+```{r echo=FALSE, message=FALSE, warning=FALSE, Plot_Three}
+qplot(y= Weight/(Height/100)^2, x= Publisher,
+      data= na.omit(imc_race), geom = 'boxplot',
+      fill = Race) +
+theme_bw() +
+labs(title = "IMC por Raça", x = "Editora", y = "IMC (kg/m²)") +
+theme_bw() +
+theme(plot.title= element_text(size= 14, hjust= .5, face= "bold"),
+      axis.text.x = element_text(angle= 0 , hjust= 1),
+      legend.position= "bottom",
+      legend.title= element_blank()) +
+theme(legend.position = "bottom", legend.title=element_blank())
+```
+
+#### Descrição do Terceiro Gráfico
+> IMC por raça. O valor-limite saudável do índice de massa corpóreo, obtido pela razão entre massa e altura quadrática, está em 25, valor este respeitado pela mediana dos humanos, mutantes e até mesmo dos aliens dentre *Marvel* e *DC*. A categoria responsável por elevar o valor médio de IMC está nos humanos irradiados, que, recorrentemente nos quadrinhos, apresentam musculatura densificada - vemos que tal fenômenos encontra suporte até mesmo nos dados ficcionais.
+
+------
+
+# Reflexão
+> As principais dificuldades para análise do *dataset* de super-heróis podem ser sumarizadas na diversidade de fontes que o compõem e que precisaram ser, por diversas vezes, reunidas e agrupadas através de pacotes como `dplyr` e `sqldf`. Como o conjunto de dados apresenta muitas variáveis categóricas, que, frequentemente, precisam ser transformadas de fatores, não é trivial a busca por correlações entre atributos, como pode ser feito, por exemplo, explorando-se variáveis contínuas através de *Draftman's plots*  e exibindo-se matrizes de correlações de Pearson. Contudo, um *set* com muitas variáveis categóricas possibilita a exploração de castas - gêneros, raças, lado, editora etc. - e das semelhanças e diferenças entre elas.
+
+> Indubitavelmente, este é um trabalho que reúne muitas lições aprendidas ao longo do curso e que dá confiança para análises exploratórias futuras. O *story-telling* se faz muito presente no modo como os dados embasam alguns fatos das HQs. 
+
+> Um dos momentos mais satisfatórios deste projeto foi a composição do poder total de cada personagem. Foi possível observar a dominância de personagens masculinos nos universos, revelar o herói mais poderoso - ainda que pouco conhecido -, confirmar a popularidade do Homem-Aranha, descobrir a raça humana como muito versátil nos universos *Marvel* e *DC*, testar a hipótese de que herois poderosos são raros - seguem uma distribuição exponencial que o logaritmo neperiano transforma em normal - e calcular, através dos histogramas, a preponderância do bem ante o mal.
+> Uma perspectiva para trabalhos futuros seria o enriquecimento e consolidação da base de dados - há duas bem definidas: uma para os herois e outra para os poderes. Fazem-se necessárias mais variáveis numéricas para que possam ser conduzidos cálculos de índice de correlação palpáveis. Uma extrapolação dos dados dos personagens com informações cinematográficas também seria bem-vinda.
